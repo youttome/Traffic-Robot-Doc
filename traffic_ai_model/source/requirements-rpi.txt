@@ -1,0 +1,11 @@
+# Raspberry Pi aarch64 / Python 3.12
+# Recommended with:
+#   python3 -m venv --system-site-packages /tmp/ai-service-venv
+# This reuses the Pi's existing cv2 / numpy / Pillow packages to save disk space.
+
+python-dotenv==1.2.2
+torch==2.5.1
+torchvision==0.20.1
+ultralytics==8.0.220
+paddlepaddle==3.2.2
+paddleocr==2.7.2

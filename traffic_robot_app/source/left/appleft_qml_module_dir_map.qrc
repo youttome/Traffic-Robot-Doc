@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="/qt/qml/left">/home/abso/left/circlebarsui/left</file>
+
+  </qresource>
+</RCC>

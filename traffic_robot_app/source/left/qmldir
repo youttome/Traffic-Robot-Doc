@@ -1,0 +1,7 @@
+module left
+typeinfo appleft.qmltypes
+prefer :/qt/qml/left/
+Main 254.0 Main.qml
+Left_Bar 254.0 Left_Bar.qml
+depends QtQuick
+
