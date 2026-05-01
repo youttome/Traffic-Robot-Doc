@@ -1,0 +1,442 @@
+# Yocto Configuration Tasks And Required Edits
+
+## Goal
+
+This file explains what must be done to make the Raspberry Pi 4 and Raspberry Pi 5 Yocto builds match the intended project configuration.
+
+Build paths:
+
+- RPi4 build: `/media/abso/yocto/scarthgap/rpi`
+- RPi5 build: `/media/abso/yocto/scarthgap/rpi5`
+
+Related project modules:
+
+- `/media/abso/yocto/traffic_robot/traffic_ai_model`
+- `/media/abso/yocto/traffic_robot/traffic_robot_app`
+
+---
+
+## 1. Main Tasks
+
+### Task 1: Fix the RPi4 custom machine file
+
+File:
+
+- `/media/abso/yocto/scarthgap/meta-rt/conf/machine/rpi-extra.conf`
+
+Why:
+
+- The file comment says Raspberry Pi 5, but the file actually inherits `raspberrypi4-64.conf`.
+- The kernel module autoload line is scoped to `raspberrypi5`, so it does not match the active RPi4 machine.
+
+Must do:
+
+- change the file description so it clearly says Raspberry Pi 4
+- change the autoload override so it applies to the RPi4 machine family
+
+---
+
+### Task 2: Keep U-Boot enabled for both boards
+
+Files:
+
+- `/media/abso/yocto/scarthgap/meta-rt/conf/machine/rpi-extra.conf`
+- `/media/abso/yocto/scarthgap/meta-rt/conf/machine/rpi5-extra.conf`
+
+Why:
+
+- Both builds are intended to boot with U-Boot.
+
+Must do:
+
+- keep `RPI_USE_U_BOOT = "1"`
+- keep `UBOOT_MACHINE = "rpi_arm64_config"`
+
+---
+
+### Task 3: Decide the network manager strategy
+
+Files:
+
+- `/media/abso/yocto/scarthgap/rpi/conf/local.conf`
+- `/media/abso/yocto/scarthgap/rpi5/conf/local.conf`
+
+Why:
+
+- The RPi4 image includes both `connman` and `networkmanager`.
+- Running both can cause network control overlap.
+
+Recommended:
+
+- choose one main network stack
+- if you want consistency with the current setup, keep `connman` and `networkmanager`, but verify runtime behavior
+- if you want a cleaner setup, choose only one manager
+
+---
+
+### Task 4: Align RPi5 package list with RPi4 if the same features are required
+
+File:
+
+- `/media/abso/yocto/scarthgap/rpi5/conf/local.conf`
+
+Why:
+
+- The RPi5 image currently omits some packages that are explicitly present in the RPi4 image.
+
+Usually needed:
+
+- `linux-firmware`
+- `wpa-supplicant`
+- `bluez5`
+- `git`
+- `pkgconfig`
+- `gdb`
+- `teleop-twist-keyboard`
+
+Optional but recommended if PWM is required:
+
+- `RPI_EXTRA_CONFIG:append` with `dtoverlay=pwm-2chan`
+
+---
+
+### Task 5: Add the custom project layers to `BBLAYERS`
+
+Files:
+
+- `/media/abso/yocto/scarthgap/rpi/conf/bblayers.conf`
+- `/media/abso/yocto/scarthgap/rpi5/conf/bblayers.conf`
+
+Why:
+
+- The project has two custom Yocto layers prepared under `traffic_robot`.
+- They are not currently in `BBLAYERS`.
+
+Must add:
+
+- `/media/abso/yocto/traffic_robot/traffic_ai_model/meta-tr`
+- `/media/abso/yocto/traffic_robot/traffic_robot_app/meta-tr`
+
+---
+
+### Task 6: Add Qt 6 layer for the traffic dashboard
+
+Files:
+
+- `/media/abso/yocto/scarthgap/rpi/conf/bblayers.conf`
+- `/media/abso/yocto/scarthgap/rpi5/conf/bblayers.conf`
+
+Why:
+
+- `traffic_robot_app` uses `qt6-cmake` and Qt 6 packages.
+- `meta-qt6` exists in the source tree, but it is not currently in `BBLAYERS`.
+
+Must add:
+
+- `/media/abso/yocto/scarthgap/meta-qt6`
+
+Note:
+
+- `meta-qt5` is already present, but that does not replace `meta-qt6` for a Qt 6 recipe.
+
+---
+
+### Task 7: Add project packages to the image
+
+Files:
+
+- `/media/abso/yocto/scarthgap/rpi/conf/local.conf`
+- `/media/abso/yocto/scarthgap/rpi5/conf/local.conf`
+
+Why:
+
+- The layers can be added successfully, but the applications will not be in the image unless they are installed.
+
+Must add:
+
+- `traffic-ai-model`
+- `traffic-robot-app`
+
+---
+
+### Task 8: Build and verify
+
+Must do after edits:
+
+1. source the build environment
+2. check layers
+3. build the image
+4. verify kernel modules, network stack, and project apps on target
+
+Basic checks:
+
+- confirm boot with U-Boot
+- confirm `/dev/i2c-*` and SPI availability
+- confirm PWM overlay if used
+- confirm `traffic-ai-model` launcher exists
+- confirm `traffic-robot-app` launcher exists
+- confirm Qt 6 QML modules load correctly
+
+---
+
+## 2. Required Edits
+
+This section gives the exact edits to make.
+
+---
+
+## Edit A: Fix `rpi-extra.conf` for Raspberry Pi 4
+
+File:
+
+- `/media/abso/yocto/scarthgap/meta-rt/conf/machine/rpi-extra.conf`
+
+Replace the file content with this cleaned version:
+
+```conf
+#@TYPE: Machine
+#@NAME: Raspberry Pi 4 Extended Configuration
+#@DESCRIPTION: Extended machine configuration for Raspberry Pi 4 with hardware interface support
+MACHINEOVERRIDES =. "raspberrypi4-64:${MACHINE}"
+require conf/machine/raspberrypi4-64.conf
+
+# Boot and display configuration
+DISABLE_RPI_BOOT_LOGO = "1"
+DISABLE_SPLASH = "1"
+RPI_USE_U_BOOT = "1"
+UBOOT_MACHINE = "rpi_arm64_config"
+
+# Hardware interface support
+ENABLE_UART = "1"
+ENABLE_I2C = "1"
+ENABLE_I2C_BUS = "1"
+ENABLE_SPI_BUS = "1"
+ENABLE_PWM = "1"
+
+# Kernel module autoload
+KERNEL_MODULE_AUTOLOAD:raspberrypi4 += "i2c-dev i2c-bcm2835 spi-bcm2835"
+```
+
+Result:
+
+- the file name, description, and actual inherited machine will match
+- the autoload line will target the correct machine family
+
+---
+
+## Edit B: Keep `rpi5-extra.conf` as the Pi 5 machine
+
+File:
+
+- `/media/abso/yocto/scarthgap/meta-rt/conf/machine/rpi5-extra.conf`
+
+Make sure this part remains present:
+
+```conf
+MACHINEOVERRIDES =. "raspberrypi5:${MACHINE}"
+require conf/machine/raspberrypi5.conf
+RPI_USE_U_BOOT = "1"
+UBOOT_MACHINE = "rpi_arm64_config"
+ENABLE_UART = "1"
+ENABLE_I2C = "1"
+ENABLE_I2C_BUS = "1"
+ENABLE_SPI_BUS = "1"
+ENABLE_PWM = "1"
+KERNEL_MODULE_AUTOLOAD:raspberrypi5 += "i2c-dev i2c-bcm2835 spi-bcm2835"
+```
+
+---
+
+## Edit C: Add project layers and Qt 6 to `bblayers.conf`
+
+Files:
+
+- `/media/abso/yocto/scarthgap/rpi/conf/bblayers.conf`
+- `/media/abso/yocto/scarthgap/rpi5/conf/bblayers.conf`
+
+Add these layer paths inside `BBLAYERS`:
+
+```conf
+  /media/abso/yocto/scarthgap/meta-qt6 \
+  /media/abso/yocto/traffic_robot/traffic_ai_model/meta-tr \
+  /media/abso/yocto/traffic_robot/traffic_robot_app/meta-tr \
+```
+
+Recommended result:
+
+```conf
+BBLAYERS ?= " \
+  /media/abso/yocto/scarthgap/meta \
+  /media/abso/yocto/scarthgap/meta-poky \
+  /media/abso/yocto/scarthgap/meta-yocto-bsp \
+  /media/abso/yocto/scarthgap/meta-openembedded/meta-oe \
+  /media/abso/yocto/scarthgap/meta-openembedded/meta-python \
+  /media/abso/yocto/scarthgap/meta-openembedded/meta-multimedia \
+  /media/abso/yocto/scarthgap/meta-openembedded/meta-networking \
+  /media/abso/yocto/scarthgap/meta-raspberrypi \
+  /media/abso/yocto/scarthgap/meta-rt \
+  /media/abso/yocto/scarthgap/meta-ros/meta-ros-common \
+  /media/abso/yocto/scarthgap/meta-ros/meta-ros2 \
+  /media/abso/yocto/scarthgap/meta-ros/meta-ros2-jazzy \
+  /media/abso/yocto/scarthgap/rpi5/workspace \
+  /media/abso/yocto/scarthgap/meta-intel-realsense \
+  /media/abso/yocto/scarthgap/meta-qt5 \
+  /media/abso/yocto/scarthgap/meta-qt6 \
+  /media/abso/yocto/scarthgap/meta-openembedded/meta-filesystems \
+  /media/abso/yocto/scarthgap/meta-virtualization \
+  /media/abso/yocto/traffic_robot/traffic_ai_model/meta-tr \
+  /media/abso/yocto/traffic_robot/traffic_robot_app/meta-tr \
+  "
+```
+
+---
+
+## Edit D: Add project packages to `local.conf`
+
+Files:
+
+- `/media/abso/yocto/scarthgap/rpi/conf/local.conf`
+- `/media/abso/yocto/scarthgap/rpi5/conf/local.conf`
+
+Add:
+
+```conf
+IMAGE_INSTALL:append = " traffic-ai-model traffic-robot-app"
+```
+
+This makes the AI service and dashboard part of the final image.
+
+---
+
+## Edit E: Align the RPi5 package list with the RPi4 image
+
+File:
+
+- `/media/abso/yocto/scarthgap/rpi5/conf/local.conf`
+
+Add these lines if you want RPi5 to have the same connectivity and development features as RPi4:
+
+```conf
+DISTRO_FEATURES:append = " connman"
+PACKAGECONFIG:append:pn-connman = " wifi bluetooth"
+
+IMAGE_INSTALL:append = " \
+    git \
+    teleop-twist-keyboard \
+    wpa-supplicant \
+    bluez5 \
+    linux-firmware \
+    pkgconfig \
+    gdb \
+"
+
+RPI_EXTRA_CONFIG:append = "\
+dtoverlay=pwm-2chan\n\
+dtparam=audio=off\n\
+"
+```
+
+If you do not need PWM or audio changes on RPi5, the `RPI_EXTRA_CONFIG` block can be skipped.
+
+---
+
+## Edit F: Optional cleanup of the network stack
+
+Files:
+
+- `/media/abso/yocto/scarthgap/rpi/conf/local.conf`
+- `/media/abso/yocto/scarthgap/rpi5/conf/local.conf`
+
+You must choose one of these approaches:
+
+### Option 1: Keep both `connman` and `networkmanager`
+
+Use this if you already depend on both in your workflow.
+
+Action:
+
+- keep the current package list
+- verify on target that only the intended service controls each interface
+
+### Option 2: Use only `connman`
+
+Remove:
+
+```conf
+IMAGE_INSTALL += "networkmanager networkmanager-nmcli"
+IMAGE_INSTALL:append = " networkmanager-openconnect"
+```
+
+### Option 3: Use only `networkmanager`
+
+Remove:
+
+```conf
+DISTRO_FEATURES:append = " connman"
+PACKAGECONFIG:append:pn-connman = " wifi bluetooth"
+IMAGE_INSTALL:append = " \
+    connman \
+    connman-tools \
+    connman-client \
+    connman-gnome \
+    connman-plugin-wifi \
+    connman-plugin-ethernet \
+    connman-conf \
+"
+```
+
+---
+
+## 3. Suggested Build Commands
+
+For RPi4:
+
+```bash
+cd /media/abso/yocto/scarthgap
+source oe-init-build-env /media/abso/yocto/scarthgap/rpi
+bitbake-layers show-layers
+bitbake <your-image-name>
+```
+
+For RPi5:
+
+```bash
+cd /media/abso/yocto/scarthgap
+source oe-init-build-env /media/abso/yocto/scarthgap/rpi5
+bitbake-layers show-layers
+bitbake <your-image-name>
+```
+
+If you do not know the image recipe yet, check:
+
+```bash
+bitbake-layers show-recipes | rg "image"
+```
+
+---
+
+## 4. Validation Checklist On Target
+
+- boot reaches Linux correctly through U-Boot
+- `uname -a` shows the expected Raspberry Pi kernel
+- `ls /dev/i2c-*` shows I2C devices if enabled
+- `lsmod | rg "i2c|spi"` shows expected modules
+- PWM overlay is active if required
+- network comes up correctly
+- ROS 2 base tools are present
+- `traffic-ai-model` command exists
+- `traffic-robot-app` command exists
+- Qt dashboard starts without missing QML module errors
+
+---
+
+## 5. Recommended Order
+
+1. Fix `rpi-extra.conf`
+2. Add `meta-qt6` and both project `meta-tr` layers to `bblayers.conf`
+3. Add `traffic-ai-model` and `traffic-robot-app` to `IMAGE_INSTALL`
+4. Align the RPi5 package list with RPi4 if needed
+5. Decide whether to keep both `connman` and `networkmanager`
+6. Build RPi4
+7. Build RPi5
+8. Validate on target hardware
